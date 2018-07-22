@@ -650,7 +650,7 @@ func runTest(cmd *base.Command, args []string) {
 		}
 
 		// Select for coverage all dependencies matching the testCoverPaths patterns.
-		for _, p := range load.PackageList(pkgs) {
+		for _, p := range load.TestPackageList(pkgs) {
 			haveMatch := false
 			for i := range testCoverPaths {
 				if match[i](p) {
@@ -716,13 +716,12 @@ func runTest(cmd *base.Command, args []string) {
 		if err != nil {
 			str := err.Error()
 			str = strings.TrimPrefix(str, "\n")
-			failed := fmt.Sprintf("FAIL\t%s [setup failed]\n", p.ImportPath)
-
 			if p.ImportPath != "" {
-				base.Errorf("# %s\n%s\n%s", p.ImportPath, str, failed)
+				base.Errorf("# %s\n%s", p.ImportPath, str)
 			} else {
-				base.Errorf("%s\n%s", str, failed)
+				base.Errorf("%s", str)
 			}
+			fmt.Printf("FAIL\t%s [setup failed]\n", p.ImportPath)
 			continue
 		}
 		builds = append(builds, buildTest)
@@ -893,8 +892,10 @@ func builderTest(b *work.Builder, p *load.Package) (buildAction, runAction, prin
 		}
 		runAction = installAction // make sure runAction != nil even if not running test
 	}
+	var vetRunAction *work.Action
 	if testC {
 		printAction = &work.Action{Mode: "test print (nop)", Package: p, Deps: []*work.Action{runAction}} // nop
+		vetRunAction = printAction
 	} else {
 		// run test
 		c := new(runCache)
@@ -907,12 +908,7 @@ func builderTest(b *work.Builder, p *load.Package) (buildAction, runAction, prin
 			TryCache:   c.tryCache,
 			Objdir:     testDir,
 		}
-		if len(ptest.GoFiles)+len(ptest.CgoFiles) > 0 {
-			addTestVet(b, ptest, runAction, installAction)
-		}
-		if pxtest != nil {
-			addTestVet(b, pxtest, runAction, installAction)
-		}
+		vetRunAction = runAction
 		cleanAction = &work.Action{
 			Mode:       "test clean",
 			Func:       builderCleanTest,
@@ -929,6 +925,14 @@ func builderTest(b *work.Builder, p *load.Package) (buildAction, runAction, prin
 			IgnoreFail: true, // print even if test failed
 		}
 	}
+
+	if len(ptest.GoFiles)+len(ptest.CgoFiles) > 0 {
+		addTestVet(b, ptest, vetRunAction, installAction)
+	}
+	if pxtest != nil {
+		addTestVet(b, pxtest, vetRunAction, installAction)
+	}
+
 	if installAction != nil {
 		if runAction != installAction {
 			installAction.Deps = append(installAction.Deps, runAction)

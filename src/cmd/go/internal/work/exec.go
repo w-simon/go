@@ -915,13 +915,17 @@ func (b *Builder) vet(a *Action) error {
 
 	a.Failed = false // vet of dependency may have failed but we can still succeed
 
+	if a.Deps[0].Failed {
+		// The build of the package has failed. Skip vet check.
+		// Vet could return export data for non-typecheck errors,
+		// but we ignore it because the package cannot be compiled.
+		return nil
+	}
+
 	vcfg := a.Deps[0].vetCfg
 	if vcfg == nil {
 		// Vet config should only be missing if the build failed.
-		if !a.Deps[0].Failed {
-			return fmt.Errorf("vet config not found")
-		}
-		return nil
+		return fmt.Errorf("vet config not found")
 	}
 
 	vcfg.VetxOnly = a.VetxOnly
@@ -1368,7 +1372,9 @@ func BuildInstallFunc(b *Builder, a *Action) (err error) {
 	// so the built target is not in the a1.Objdir tree that b.cleanup(a1) removes.
 	if a1.built == a.Target {
 		a.built = a.Target
-		b.cleanup(a1)
+		if !a.buggyInstall {
+			b.cleanup(a1)
+		}
 		// Whether we're smart enough to avoid a complete rebuild
 		// depends on exactly what the staleness and rebuild algorithms
 		// are, as well as potentially the state of the Go build cache.
@@ -1422,7 +1428,9 @@ func BuildInstallFunc(b *Builder, a *Action) (err error) {
 		}
 	}
 
-	defer b.cleanup(a1)
+	if !a.buggyInstall {
+		defer b.cleanup(a1)
+	}
 
 	return b.moveOrCopyFile(a.Target, a1.built, perm, false)
 }
